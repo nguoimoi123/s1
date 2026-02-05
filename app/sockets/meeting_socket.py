@@ -14,8 +14,14 @@ audio_queues = {}
 def start_streaming(data=None):
     sid = request.sid
     
-    # Lấy user_id từ query params trong socket connect hoặc mặc định
-    user_id = request.args.get('user_id', 'default_user')
+    # Lấy user_id ưu tiên từ payload, sau đó query params, cuối cùng mặc định
+    user_id = None
+    if isinstance(data, dict):
+        user_id = data.get("user_id")
+    if not user_id:
+        user_id = request.args.get("user_id")
+    if not user_id:
+        user_id = "default_user"
     
     # 1. Kiểm tra giới hạn cuộc họp theo gói
     plan = get_user_plan(user_id)
