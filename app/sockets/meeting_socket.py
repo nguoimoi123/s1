@@ -1,5 +1,5 @@
-import eventlet
-from eventlet.queue import Queue
+import threading
+from queue import Queue
 from flask import request
 from flask_socketio import emit
 from app.extensions import socketio
@@ -42,11 +42,16 @@ def start_streaming(data=None):
         title = data.get("title")
     get_or_create_meeting(sid, user_id, title=title)
 
-    # ✅ Dùng Queue của eventlet
+    # ✅ Dùng Queue thread-safe
     audio_queues[sid] = Queue()
 
-    # ✅ Chạy worker bằng green thread
-    eventlet.spawn_n(run_sm_worker, sid, audio_queues[sid])
+    # ✅ Chạy worker bằng thread riêng
+    worker_thread = threading.Thread(
+        target=run_sm_worker,
+        args=(sid, audio_queues[sid]),
+        daemon=True,
+    )
+    worker_thread.start()
 
     emit("status", {"msg": "Speechmatics ready"})
 
