@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.services.openai_service import summarize_transcript
 from app.services.meeting_service import get_or_create_meeting, save_summary, apply_speaker_names
+from app.models.meeting_model import Meeting
 from app.services.rag_service import ingest_meeting_transcript
 from app.services.reminder_service import ReminderController
 
@@ -8,11 +9,17 @@ bp = Blueprint("summarize", __name__)
 
 @bp.route("/summarize/<sid>", methods=["GET"])
 def summarize_sid(sid):
-    # Lấy user_id từ query params (giả sử client gửi kèm)
-    user_id = request.args.get('user_id', 'default_user')
-    
-    # 1. Lấy/Init meeting từ DB
-    meeting = get_or_create_meeting(sid, user_id)
+    # Lấy user_id từ query params, ưu tiên user_id của meeting nếu có
+    user_id = request.args.get('user_id')
+
+    meeting = Meeting.objects(sid=sid).first()
+    if meeting:
+        if not user_id or user_id == 'default_user':
+            user_id = meeting.user_id
+    else:
+        if not user_id:
+            user_id = 'default_user'
+        meeting = get_or_create_meeting(sid, user_id)
     
     # Kiểm tra xem đã có transcript trong DB chưa
     if not meeting.full_transcript:
