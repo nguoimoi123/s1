@@ -7,11 +7,15 @@ from app.services.meeting_service import append_transcript
 # (Giữ lại session_dict nếu cần quản lý queue worker riêng biệt, 
 # nhưng ở đây ta chỉ cần lưu DB nên bỏ bớt cho sạch)
 
-def run_sm_worker(sid, audio_queue):
-    asyncio.run(sm_worker(sid, audio_queue))
+def run_sm_worker(sid, audio_queue, emit_queue):
+    try:
+        asyncio.run(sm_worker(sid, audio_queue, emit_queue))
+    finally:
+        if emit_queue is not None:
+            emit_queue.put(None)
 
 
-async def sm_worker(sid, audio_queue):
+async def sm_worker(sid, audio_queue, emit_queue):
     headers = {"Authorization": f"Bearer {Config.SPEECHMATICS_API_KEY}"}
     final_buffer = ""
 
@@ -40,9 +44,11 @@ async def sm_worker(sid, audio_queue):
                 if msg_type == "AddPartialTranscript":
                     text = msg.get("metadata", {}).get("transcript", "").strip()
                     if text:
-                        socketio.emit("transcript_response",
-                                      {"text": text, "is_final": False},
-                                      room=sid)
+                        if emit_queue is not None:
+                            emit_queue.put({
+                                "event": "transcript_response",
+                                "data": {"text": text, "is_final": False},
+                            })
 
                 elif msg_type == "AddTranscript":
                     text = msg.get("metadata", {}).get("transcript", "").strip()
@@ -63,11 +69,15 @@ async def sm_worker(sid, audio_queue):
                                 line = f"Người {speaker}: {sentence}"
                                 
                                 # Gửi UI
-                                socketio.emit("transcript_response",
-                                              {"speaker": f"Người {speaker}",
-                                               "text": sentence,
-                                               "is_final": True},
-                                              room=sid)
+                                if emit_queue is not None:
+                                    emit_queue.put({
+                                        "event": "transcript_response",
+                                        "data": {
+                                            "speaker": f"Người {speaker}",
+                                            "text": sentence,
+                                            "is_final": True,
+                                        },
+                                    })
                                 
                                 # LƯU VÀO DATABASE (Mới thêm)
                                 append_transcript(sid, line)

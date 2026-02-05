@@ -11,6 +11,24 @@ from app.models.meeting_model import Meeting
 
 # Dictionary lưu queue cho từng sid active
 audio_queues = {}
+emit_queues = {}
+
+
+def _emit_loop(sid, emit_queue):
+    while True:
+        try:
+            item = emit_queue.get_nowait()
+        except Exception:
+            eventlet.sleep(0.01)
+            continue
+
+        if item is None:
+            break
+
+        event = item.get("event")
+        data = item.get("data")
+        if event and data is not None:
+            socketio.emit(event, data, room=sid)
 
 @socketio.on("start_streaming")
 def start_streaming(data=None):
@@ -45,9 +63,13 @@ def start_streaming(data=None):
 
     # ✅ Dùng Queue thread-safe
     audio_queues[sid] = Queue()
+    emit_queues[sid] = Queue()
 
     # ✅ Chạy worker bằng native thread (tránh loop đang chạy của eventlet)
-    eventlet.spawn_n(tpool.execute, run_sm_worker, sid, audio_queues[sid])
+    eventlet.spawn_n(tpool.execute, run_sm_worker, sid, audio_queues[sid], emit_queues[sid])
+
+    # ✅ Greenlet emit để tránh switch thread
+    eventlet.spawn_n(_emit_loop, sid, emit_queues[sid])
 
     emit("status", {"msg": "Speechmatics ready"})
 
@@ -64,6 +86,8 @@ def end_meeting():
     sid = request.sid
     if sid in audio_queues:
         audio_queues[sid].put(None)
+    if sid in emit_queues:
+        emit_queues[sid].put(None)
 
 
 @socketio.on("set_speaker_name")
@@ -84,3 +108,4 @@ def set_speaker_name(data=None):
 @socketio.on("disconnect")
 def disconnect():
     audio_queues.pop(request.sid, None)
+    emit_queues.pop(request.sid, None)
