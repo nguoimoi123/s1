@@ -7,6 +7,10 @@ from app.services.meeting_service import append_transcript
 # (Giữ lại session_dict nếu cần quản lý queue worker riêng biệt, 
 # nhưng ở đây ta chỉ cần lưu DB nên bỏ bớt cho sạch)
 
+def run_sm_worker(sid, audio_queue):
+    asyncio.run(sm_worker(sid, audio_queue))
+
+
 async def sm_worker(sid, audio_queue):
     headers = {"Authorization": f"Bearer {Config.SPEECHMATICS_API_KEY}"}
     final_buffer = ""
