@@ -1,4 +1,5 @@
-import threading
+import eventlet
+from eventlet import tpool
 from queue import Queue
 from flask import request
 from flask_socketio import emit
@@ -45,13 +46,8 @@ def start_streaming(data=None):
     # ✅ Dùng Queue thread-safe
     audio_queues[sid] = Queue()
 
-    # ✅ Chạy worker bằng thread riêng
-    worker_thread = threading.Thread(
-        target=run_sm_worker,
-        args=(sid, audio_queues[sid]),
-        daemon=True,
-    )
-    worker_thread.start()
+    # ✅ Chạy worker bằng native thread (tránh loop đang chạy của eventlet)
+    eventlet.spawn_n(tpool.execute, run_sm_worker, sid, audio_queues[sid])
 
     emit("status", {"msg": "Speechmatics ready"})
 

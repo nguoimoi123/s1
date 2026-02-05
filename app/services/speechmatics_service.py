@@ -8,15 +8,7 @@ from app.services.meeting_service import append_transcript
 # nhưng ở đây ta chỉ cần lưu DB nên bỏ bớt cho sạch)
 
 def run_sm_worker(sid, audio_queue):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(sm_worker(sid, audio_queue))
-    finally:
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        finally:
-            loop.close()
+    asyncio.run(sm_worker(sid, audio_queue))
 
 
 async def sm_worker(sid, audio_queue):
