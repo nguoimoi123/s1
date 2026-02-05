@@ -1,7 +1,6 @@
-import asyncio, queue
+import asyncio
 import eventlet
 import eventlet.patcher
-import threading as threading
 from flask import request
 from flask_socketio import emit
 from app.extensions import socketio
@@ -11,6 +10,7 @@ from app.services.plan_service import get_plan_limits, get_user_plan
 from app.models.meeting_model import Meeting
 
 # Dictionary lưu queue cho từng sid active (chỉ dùng để worker lấy data audio)
+_queue = eventlet.patcher.original('queue')
 audio_queues = {}
 
 @socketio.on("start_streaming")
@@ -48,7 +48,7 @@ def start_streaming(data=None):
     get_or_create_meeting(sid, user_id, title=title)
     
     # 3. Tạo queue cho sid này
-    audio_queues[sid] = queue.Queue()
+    audio_queues[sid] = _queue.Queue()
 
     # Use a real OS thread (not green thread) to run asyncio loop
     _threading = eventlet.patcher.original('threading')
