@@ -1,4 +1,7 @@
-import asyncio, queue, threading
+import asyncio, queue
+import eventlet
+import eventlet.patcher
+import threading as threading
 from flask import request
 from flask_socketio import emit
 from app.extensions import socketio
@@ -47,14 +50,13 @@ def start_streaming(data=None):
     # 3. Tạo queue cho sid này
     audio_queues[sid] = queue.Queue()
 
-    loop = asyncio.new_event_loop()
+    # Use a real OS thread (not green thread) to run asyncio loop
+    _threading = eventlet.patcher.original('threading')
 
     def runner():
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(sm_worker(sid, audio_queues[sid]))
-        loop.close()
+        asyncio.run(sm_worker(sid, audio_queues[sid]))
 
-    threading.Thread(target=runner, daemon=True).start()
+    _threading.Thread(target=runner, daemon=True).start()
     emit("status", {"msg": "Speechmatics ready"})
 
 @socketio.on("audio_data")
