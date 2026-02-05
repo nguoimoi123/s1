@@ -1,6 +1,5 @@
-import asyncio
 import eventlet
-import eventlet.patcher
+from eventlet.queue import Queue
 from flask import request
 from flask_socketio import emit
 from app.extensions import socketio
@@ -9,15 +8,13 @@ from app.services.meeting_service import get_or_create_meeting, update_speaker_n
 from app.services.plan_service import get_plan_limits, get_user_plan
 from app.models.meeting_model import Meeting
 
-# Dictionary lưu queue cho từng sid active (chỉ dùng để worker lấy data audio)
-_queue = eventlet.patcher.original('queue')
+# Dictionary lưu queue cho từng sid active
 audio_queues = {}
 
 @socketio.on("start_streaming")
 def start_streaming(data=None):
     sid = request.sid
-    
-    # Lấy user_id ưu tiên từ payload, sau đó query params, cuối cùng mặc định
+
     user_id = None
     if isinstance(data, dict):
         user_id = data.get("user_id")
@@ -25,8 +22,7 @@ def start_streaming(data=None):
         user_id = request.args.get("user_id")
     if not user_id:
         user_id = "default_user"
-    
-    # 1. Kiểm tra giới hạn cuộc họp theo gói
+
     plan = get_user_plan(user_id)
     limits = get_plan_limits(plan)
     meeting_limit = limits.get("meeting_limit")
@@ -41,29 +37,26 @@ def start_streaming(data=None):
             })
             return
 
-    # 2. Tạo/Cập nhật record Meeting trong DB
     title = None
     if isinstance(data, dict):
         title = data.get("title")
     get_or_create_meeting(sid, user_id, title=title)
-    
-    # 3. Tạo queue cho sid này
-    audio_queues[sid] = _queue.Queue()
 
-    # Use a real OS thread (not green thread) to run asyncio loop
-    _threading = eventlet.patcher.original('threading')
+    # ✅ Dùng Queue của eventlet
+    audio_queues[sid] = Queue()
 
-    def runner():
-        asyncio.run(sm_worker(sid, audio_queues[sid]))
+    # ✅ Chạy worker bằng green thread
+    eventlet.spawn_n(sm_worker, sid, audio_queues[sid])
 
-    _threading.Thread(target=runner, daemon=True).start()
     emit("status", {"msg": "Speechmatics ready"})
+
 
 @socketio.on("audio_data")
 def audio_data(data):
     sid = request.sid
     if sid in audio_queues and len(data) > 5:
         audio_queues[sid].put(data[5:])
+
 
 @socketio.on("end_meeting")
 def end_meeting():
@@ -85,6 +78,7 @@ def set_speaker_name(data=None):
         return
 
     update_speaker_name(sid, speaker_id, name)
+
 
 @socketio.on("disconnect")
 def disconnect():
